@@ -11,6 +11,7 @@ type Square string
 type PieceType string
 
 const (
+	Empty BitBoard = 0x0000000000000000
 	Rank1 BitBoard = 0x00000000000000FF
 	Rank2 BitBoard = 0x000000000000FF00
 	Rank3 BitBoard = 0x0000000000FF0000
@@ -41,13 +42,13 @@ func moveToAlgebraic(m Move) string {
 	return fromSquare + toSquare
 }
 
-func bitBoardToAlgebraic(bb BitBoard) string {
-	if bb == 0 {
+func bitBoardToAlgebraic(position BitBoard) string {
+	if position == 0 {
 		return ""
 	}
 	index := 0
-	for bb != 1 {
-		bb >>= 1
+	for position != 1 {
+		position >>= 1
 		index++
 	}
 	file := index % 8
@@ -93,40 +94,70 @@ type Board struct {
 	blackCanCastleQueenSide bool
 }
 
-func noPieceIsOnSquare(b Board, toSquare BitBoard) bool {
-	return (b.WhitePawns|
-		b.WhiteKnights|
-		b.WhiteBishops|
-		b.WhiteRooks|
-		b.WhiteQueens|
-		b.WhiteKing|
-		b.BlackPawns|
-		b.BlackKnights|
-		b.BlackBishops|
-		b.BlackRooks|
-		b.BlackQueens|
-		b.BlackKing)&toSquare == 0
+func piecesForCurrentPlayer(currentposition Board) []BitBoard {
+	if currentposition.whiteToMove {
+		return []BitBoard{
+			currentposition.WhitePawns, currentposition.WhiteKnights, currentposition.WhiteBishops, currentposition.WhiteRooks, currentposition.WhiteQueens, currentposition.WhiteKing,
+		}
+	}
+	return []BitBoard{
+		currentposition.BlackPawns, currentposition.BlackKnights, currentposition.BlackBishops, currentposition.BlackRooks, currentposition.BlackQueens, currentposition.BlackKing,
+	}
+}
+
+func piecesForOpposingPlayer(currentPosition Board) []BitBoard {
+	if currentPosition.whiteToMove {
+		return []BitBoard{
+			currentPosition.BlackPawns, currentPosition.BlackKnights, currentPosition.BlackBishops, currentPosition.BlackRooks, currentPosition.BlackQueens, currentPosition.BlackKing,
+		}
+	}
+	return []BitBoard{
+		currentPosition.WhitePawns, currentPosition.WhiteKnights, currentPosition.WhiteBishops, currentPosition.WhiteRooks, currentPosition.WhiteQueens, currentPosition.WhiteKing,
+	}
+}
+
+func noPieceIsOnSquare(currentPosition Board, toSquare BitBoard) bool {
+	return (currentPosition.WhitePawns|
+		currentPosition.WhiteKnights|
+		currentPosition.WhiteBishops|
+		currentPosition.WhiteRooks|
+		currentPosition.WhiteQueens|
+		currentPosition.WhiteKing|
+		currentPosition.BlackPawns|
+		currentPosition.BlackKnights|
+		currentPosition.BlackBishops|
+		currentPosition.BlackRooks|
+		currentPosition.BlackQueens|
+		currentPosition.BlackKing)&toSquare == 0
+}
+
+func opponentPieceIsOnSquare(currentPosition Board, toSquare BitBoard) bool {
+	opposingPieces := piecesForOpposingPlayer(currentPosition)
+	for _, piece := range opposingPieces {
+		if piece&toSquare != 0 {
+			return true
+		}
+	}
+
+	return false
 }
 
 func randomMove(moves []Move) Move {
 	return moves[rand.Intn(len(moves))]
 }
 
-func generatePawnMoves(b Board, isWhite bool) []Move {
+func generatePawnMoves(currentPosition Board) []Move {
 	var moves []Move
 	var pawns BitBoard
 	direction := 8
 	var startRank BitBoard
-	//var promotionRank BitBoard
 
-	if isWhite {
-		pawns = b.WhitePawns
+	if currentPosition.whiteToMove {
+		pawns = currentPosition.WhitePawns
 		startRank = Rank2
-		//promotionRank = 0xFF00000000000000
 	} else {
-		pawns = b.BlackPawns
+		pawns = currentPosition.BlackPawns
 		startRank = Rank7
-		//promotionRank = 0x00000000000000FF
 	}
 
 	for pawns != 0 {
@@ -135,103 +166,190 @@ func generatePawnMoves(b Board, isWhite bool) []Move {
 
 		// Single move forward
 		var toSquare BitBoard
-		if isWhite {
+		if currentPosition.whiteToMove {
 			toSquare = square << direction
 		} else {
 			toSquare = square >> direction
 		}
 
-		if toSquare != 0 && noPieceIsOnSquare(b, toSquare) {
+		if toSquare != 0 && noPieceIsOnSquare(currentPosition, toSquare) {
 			moves = append(moves, Move{From: square, To: toSquare})
 		}
 
 		// Handle start rank moving 2 squares
-		if square&startRank != 0 {
+		if square&startRank != Empty {
 			var doubleMoveSquare BitBoard
-			if isWhite {
+			if currentPosition.whiteToMove {
 				doubleMoveSquare = square << (2 * direction)
 			} else {
 				doubleMoveSquare = square >> (2 * direction)
 			}
 
-			if doubleMoveSquare != 0 && noPieceIsOnSquare(b, doubleMoveSquare) && noPieceIsOnSquare(b, toSquare) {
+			if doubleMoveSquare != Empty && noPieceIsOnSquare(currentPosition, doubleMoveSquare) && noPieceIsOnSquare(currentPosition, toSquare) {
 				moves = append(moves, Move{From: square, To: doubleMoveSquare})
 			}
 		}
+
+		// Handle captures
+		// Capture to the left
+		if currentPosition.whiteToMove {
+			toSquare = (square << (direction - 1)) & ^FileA
+		} else {
+			toSquare = (square >> (direction + 1)) & ^FileH
+		}
+		if toSquare != 0 && opponentPieceIsOnSquare(currentPosition, toSquare) {
+			moves = append(moves, Move{From: square, To: toSquare})
+		}
+
+		// Capture to the right
+		if currentPosition.whiteToMove {
+			toSquare = (square << (direction + 1)) & ^FileH
+		} else {
+			toSquare = (square >> (direction - 1)) & ^FileA
+		}
+		if toSquare != Empty && opponentPieceIsOnSquare(currentPosition, toSquare) {
+			moves = append(moves, Move{From: square, To: toSquare})
+		}
+		// handle en passant
 	}
 
 	return moves
 }
 
-func applyMove(b Board, m Move) Board {
-	var nextBoard Board = b
+func applyMove(currentPosition Board, currentMove Move) Board {
+	var resultingPosition Board = currentPosition
 
 	// Determine which piece is moving
-	pieceMoved := BitBoard(0)
-	for _, piece := range []BitBoard{
-		b.WhitePawns, b.WhiteKnights, b.WhiteBishops, b.WhiteRooks, b.WhiteQueens, b.WhiteKing,
-		b.BlackPawns, b.BlackKnights, b.BlackBishops, b.BlackRooks, b.BlackQueens, b.BlackKing,
-	} {
-		if m.From&piece != 0 {
+	pieceMoved := Empty
+	for _, piece := range piecesForCurrentPlayer(currentPosition) {
+		if currentMove.From&piece != 0 {
 			pieceMoved = piece
 			break
 		}
 	}
 
+	// remove captured pice
+	pieceRemoved := Empty
+	for _, piece := range piecesForOpposingPlayer(resultingPosition) {
+		if currentMove.To&piece != 0 {
+			fmt.Println("Removing piece!")
+			pieceRemoved = piece
+			break
+		}
+	}
+
 	// Remove the piece from the source square
-	nextBoard.WhitePawns &= ^m.From
-	nextBoard.WhiteKnights &= ^m.From
-	nextBoard.WhiteBishops &= ^m.From
-	nextBoard.WhiteRooks &= ^m.From
-	nextBoard.WhiteQueens &= ^m.From
-	nextBoard.WhiteKing &= ^m.From
-	nextBoard.BlackPawns &= ^m.From
-	nextBoard.BlackKnights &= ^m.From
-	nextBoard.BlackBishops &= ^m.From
-	nextBoard.BlackRooks &= ^m.From
-	nextBoard.BlackQueens &= ^m.From
-	nextBoard.BlackKing &= ^m.From
+	resultingPosition.WhitePawns &= ^currentMove.From
+	resultingPosition.WhiteKnights &= ^currentMove.From
+	resultingPosition.WhiteBishops &= ^currentMove.From
+	resultingPosition.WhiteRooks &= ^currentMove.From
+	resultingPosition.WhiteQueens &= ^currentMove.From
+	resultingPosition.WhiteKing &= ^currentMove.From
+	resultingPosition.BlackPawns &= ^currentMove.From
+	resultingPosition.BlackKnights &= ^currentMove.From
+	resultingPosition.BlackBishops &= ^currentMove.From
+	resultingPosition.BlackRooks &= ^currentMove.From
+	resultingPosition.BlackQueens &= ^currentMove.From
+	resultingPosition.BlackKing &= ^currentMove.From
+
+	// Place the piece on the destination square
+	if pieceRemoved != Empty {
+		switch pieceRemoved {
+		case resultingPosition.WhitePawns:
+			fmt.Println("Removing white pawn")
+			resultingPosition.WhitePawns &= ^currentMove.To
+		case resultingPosition.WhiteKnights:
+			fmt.Println("Removing white knight")
+			resultingPosition.WhiteKnights &= ^currentMove.To
+		case resultingPosition.WhiteBishops:
+			fmt.Println("Removing white bishop")
+			resultingPosition.WhiteBishops &= ^currentMove.To
+		case resultingPosition.WhiteRooks:
+			fmt.Println("Removing white rook")
+			resultingPosition.WhiteRooks &= ^currentMove.To
+		case resultingPosition.WhiteQueens:
+			fmt.Println("Removing white queen")
+			resultingPosition.WhiteQueens &= ^currentMove.To
+		case resultingPosition.WhiteKing:
+			fmt.Println("Removing white king")
+			resultingPosition.WhiteKing &= ^currentMove.To
+		case resultingPosition.BlackPawns:
+			fmt.Println("Removing black pawn")
+			resultingPosition.BlackPawns &= ^currentMove.To
+		case resultingPosition.BlackKnights:
+			fmt.Println("Removing black knight")
+			resultingPosition.BlackKnights &= ^currentMove.To
+		case resultingPosition.BlackBishops:
+			fmt.Println("Removing black bishop")
+			resultingPosition.BlackBishops &= ^currentMove.To
+		case resultingPosition.BlackRooks:
+			fmt.Println("Removing black rook")
+			resultingPosition.BlackRooks &= ^currentMove.To
+		case resultingPosition.BlackQueens:
+			fmt.Println("Removing black queen")
+			resultingPosition.BlackQueens &= ^currentMove.To
+		case resultingPosition.BlackKing:
+			fmt.Println("Removing black king")
+			resultingPosition.BlackKing &= ^currentMove.To
+		default:
+			fmt.Println("No piece to remove.")
+		}
+	}
 
 	// Place the piece on the destination square
 	switch pieceMoved {
-	case b.WhitePawns:
-		nextBoard.WhitePawns |= m.To
-	case b.WhiteKnights:
-		nextBoard.WhiteKnights |= m.To
-	case b.WhiteBishops:
-		nextBoard.WhiteBishops |= m.To
-	case b.WhiteRooks:
-		nextBoard.WhiteRooks |= m.To
-	case b.WhiteQueens:
-		nextBoard.WhiteQueens |= m.To
-	case b.WhiteKing:
-		nextBoard.WhiteKing |= m.To
-	case b.BlackPawns:
-		nextBoard.BlackPawns |= m.To
-	case b.BlackKnights:
-		nextBoard.BlackKnights |= m.To
-	case b.BlackBishops:
-		nextBoard.BlackBishops |= m.To
-	case b.BlackRooks:
-		nextBoard.BlackRooks |= m.To
-	case b.BlackQueens:
-		nextBoard.BlackQueens |= m.To
-	case b.BlackKing:
-		nextBoard.BlackKing |= m.To
+	case currentPosition.WhitePawns:
+		fmt.Println("Placing white pawn")
+		resultingPosition.WhitePawns |= currentMove.To
+	case currentPosition.WhiteKnights:
+		fmt.Println("Placing white knight")
+		resultingPosition.WhiteKnights |= currentMove.To
+	case currentPosition.WhiteBishops:
+		fmt.Println("Placing white bishop")
+		resultingPosition.WhiteBishops |= currentMove.To
+	case currentPosition.WhiteRooks:
+		fmt.Println("Placing white rook")
+		resultingPosition.WhiteRooks |= currentMove.To
+	case currentPosition.WhiteQueens:
+		fmt.Println("Placing white queen")
+		resultingPosition.WhiteQueens |= currentMove.To
+	case currentPosition.WhiteKing:
+		fmt.Println("Placing white king")
+		resultingPosition.WhiteKing |= currentMove.To
+	case currentPosition.BlackPawns:
+		fmt.Println("Placing black pawn")
+		resultingPosition.BlackPawns |= currentMove.To
+	case currentPosition.BlackKnights:
+		fmt.Println("Placing black knight")
+		resultingPosition.BlackKnights |= currentMove.To
+	case currentPosition.BlackBishops:
+		fmt.Println("Placing black bishop")
+		resultingPosition.BlackBishops |= currentMove.To
+	case currentPosition.BlackRooks:
+		fmt.Println("Placing black rook")
+		resultingPosition.BlackRooks |= currentMove.To
+	case currentPosition.BlackQueens:
+		fmt.Println("Placing black queen")
+		resultingPosition.BlackQueens |= currentMove.To
+	case currentPosition.BlackKing:
+		fmt.Println("Placing black king")
+		resultingPosition.BlackKing |= currentMove.To
+	default:
+		fmt.Println("No piece to place.")
 	}
 
 	// Toggle the active color
-	nextBoard.whiteToMove = !b.whiteToMove
+	resultingPosition.whiteToMove = !currentPosition.whiteToMove
 
-	if pieceMoved == b.WhitePawns || pieceMoved == b.BlackPawns {
-		nextBoard.halfMoveClock = b.halfMoveClock + 1
+	if pieceMoved == currentPosition.WhitePawns || pieceMoved == currentPosition.BlackPawns {
+		resultingPosition.halfMoveClock = currentPosition.halfMoveClock + 1
 	}
 
-	if nextBoard.whiteToMove {
-		nextBoard.fullMoveNumber = b.fullMoveNumber + 1
+	if resultingPosition.whiteToMove {
+		resultingPosition.fullMoveNumber = currentPosition.fullMoveNumber + 1
 	}
 
-	return nextBoard
+	return resultingPosition
 }
 
 func displayBoard(b Board) {
@@ -451,17 +569,15 @@ func main() {
 	board := fenToBoard("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
 	displayBoard(board)
 
-	moves := generatePawnMoves(board, board.whiteToMove)
+	moves := generatePawnMoves(board)
 
 	for len(moves) > 0 {
-		for _, num := range moves {
-			fmt.Println(moveToAlgebraic(num))
-		}
-
-		board = applyMove(board, randomMove(moves))
+		move := randomMove(moves)
+		fmt.Println(moveToAlgebraic(move))
+		board = applyMove(board, move)
 		displayBoard(board)
 
-		moves = generatePawnMoves(board, board.whiteToMove)
+		moves = generatePawnMoves(board)
 	}
 
 	fmt.Println("No more legal moves")
