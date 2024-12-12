@@ -216,13 +216,55 @@ func generatePawnMoves(currentPosition Board) []Move {
 	return moves
 }
 
+func generateKnightMoves(currentPosition Board) []Move {
+	var moves []Move
+	var knights BitBoard
+	var directions = []int{15, 17, 10, 6, -15, -17, -10, -6}
+
+	if currentPosition.whiteToMove {
+		knights = currentPosition.WhiteKnights
+	} else {
+		knights = currentPosition.BlackKnights
+	}
+
+	for knights != 0 {
+		square := knights & -knights
+		knights &= knights - 1
+
+		for _, direction := range directions {
+			var toSquare BitBoard
+			if direction > 0 {
+				toSquare = square << direction
+			} else {
+				toSquare = square >> -direction
+			}
+
+			if toSquare != 0 && noPieceIsOnSquare(currentPosition, toSquare) {
+				moves = append(moves, Move{From: square, To: toSquare})
+			} else if toSquare != 0 && opponentPieceIsOnSquare(currentPosition, toSquare) {
+				moves = append(moves, Move{From: square, To: toSquare})
+			}
+		}
+	}
+
+	return moves
+}
+
+func generateMoves(currentPosition Board) []Move {
+	return append(generatePawnMoves(currentPosition), generateKnightMoves(currentPosition)...)
+}
+
+func bitBoardsInterect(position1 BitBoard, position2 BitBoard) bool {
+	return position1&position2 != Empty
+}
+
 func applyMove(currentPosition Board, currentMove Move) Board {
 	var resultingPosition Board = currentPosition
 
 	// Determine which piece is moving
 	pieceMoved := Empty
 	for _, piece := range piecesForCurrentPlayer(currentPosition) {
-		if currentMove.From&piece != 0 {
+		if bitBoardsInterect(currentMove.From, piece) {
 			pieceMoved = piece
 			break
 		}
@@ -230,10 +272,12 @@ func applyMove(currentPosition Board, currentMove Move) Board {
 
 	// remove captured pice
 	pieceRemoved := Empty
+	isCapture := false
 	for _, piece := range piecesForOpposingPlayer(resultingPosition) {
-		if currentMove.To&piece != 0 {
+		if bitBoardsInterect(currentMove.To, piece) {
 			fmt.Println("Removing piece!")
 			pieceRemoved = piece
+			isCapture = true
 			break
 		}
 	}
@@ -291,8 +335,6 @@ func applyMove(currentPosition Board, currentMove Move) Board {
 		case resultingPosition.BlackKing:
 			fmt.Println("Removing black king")
 			resultingPosition.BlackKing &= ^currentMove.To
-		default:
-			fmt.Println("No piece to remove.")
 		}
 	}
 
@@ -341,7 +383,9 @@ func applyMove(currentPosition Board, currentMove Move) Board {
 	// Toggle the active color
 	resultingPosition.whiteToMove = !currentPosition.whiteToMove
 
-	if pieceMoved == currentPosition.WhitePawns || pieceMoved == currentPosition.BlackPawns {
+	if isCapture || (pieceMoved == currentPosition.WhitePawns || pieceMoved == currentPosition.BlackPawns) {
+		resultingPosition.halfMoveClock = 0
+	} else {
 		resultingPosition.halfMoveClock = currentPosition.halfMoveClock + 1
 	}
 
@@ -350,6 +394,23 @@ func applyMove(currentPosition Board, currentMove Move) Board {
 	}
 
 	return resultingPosition
+}
+
+func displayBitBoard(bb BitBoard) {
+	fmt.Println("  a b c d e f g h")
+	for rank := 7; rank >= 0; rank-- {
+		fmt.Printf("%d ", rank+1)
+		for file := 0; file < 8; file++ {
+			square := BitBoard(1 << (rank*8 + file))
+			if bb&square != 0 {
+				fmt.Print("1 ")
+			} else {
+				fmt.Print("- ")
+			}
+		}
+		fmt.Printf("%d\n", rank+1)
+	}
+	fmt.Println("  a b c d e f g h")
 }
 
 func displayBoard(b Board) {
@@ -569,7 +630,7 @@ func main() {
 	board := fenToBoard("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
 	displayBoard(board)
 
-	moves := generatePawnMoves(board)
+	moves := generateMoves(board)
 
 	for len(moves) > 0 {
 		move := randomMove(moves)
@@ -577,8 +638,12 @@ func main() {
 		board = applyMove(board, move)
 		displayBoard(board)
 
-		moves = generatePawnMoves(board)
+		moves = generateMoves(board)
 	}
 
-	fmt.Println("No more legal moves")
+	if board.whiteToMove {
+		fmt.Println("White's turn but there are no legal moves.")
+	} else {
+		fmt.Println("Black's turn but there are no legal moves.")
+	}
 }
