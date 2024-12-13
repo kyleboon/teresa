@@ -233,6 +233,21 @@ func generateKnightMoves(currentPosition Board) []Move {
 
 		for _, direction := range directions {
 			var toSquare BitBoard
+
+			// Ensure the knight doesn't wrap around the board
+			if (direction == 15 || direction == -17) && (square&FileA != 0) {
+				continue
+			}
+			if (direction == 17 || direction == -15) && (square&FileH != 0) {
+				continue
+			}
+			if (direction == 10 || direction == -6) && (square&(FileA|FileB) != 0) {
+				continue
+			}
+			if (direction == 6 || direction == -10) && (square&(FileG|FileH) != 0) {
+				continue
+			}
+
 			if direction > 0 {
 				toSquare = square << direction
 			} else {
@@ -631,6 +646,12 @@ func main() {
 	displayBoard(board)
 
 	moves := generateMoves(board)
+
+	// fmt.Println(len(moves))
+
+	// for _, move := range moves {
+	// 	fmt.Println(moveToAlgebraic(move))
+	// }
 
 	for len(moves) > 0 {
 		move := randomMove(moves)
